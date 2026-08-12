@@ -13,7 +13,7 @@
 
 // формат строки заголовка:
 // [dd-mm-yyyy hh:mm:ss] [level] [index] [size] [before] [after]\n
-// каждый из level/index/size/before/after занимает по 20 символов
+// каждый из index/size/before/after занимает по 20 символов
 namespace LogFormat {
     // внутренняя длина полей без учета скобок
     inline std::size_t LEVEL_LEN  = 7;

@@ -17,6 +17,15 @@ enum class LOG_API LevelImportance {
     High
 };
 
+namespace NameLevels {
+    inline std::string DESTROY = "DESTROY";
+    inline std::string DELETE  = "DELETE";
+    inline std::string LOW     = "LOW";
+    inline std::string MEDIUM  = "MEDIUM";
+    inline std::string HIGH    = "HIGH";
+    inline std::string UNKNOWN = "UNKNOWN";
+}
+
 
 class LOG_API VirtualLogger {
 public:
@@ -49,12 +58,12 @@ using DestroyLogger_t = void (*)(VirtualLogger*);
 
 inline std::string VirtualLogger::lvl2str(LevelImportance level) noexcept {
     switch (level) {
-        case LevelImportance::Destroy:  { return "DESTROY"; }
-        case LevelImportance::Delete:   { return "DELETE";  }
-        case LevelImportance::Low:      { return "LOW";     }
-        case LevelImportance::Medium:   { return "MEDIUM";  }
-        case LevelImportance::High:     { return "HIGH";    }
-        default:                        { return "UNKNOWN"; }
+        case LevelImportance::Destroy:  { return NameLevels::DESTROY; }
+        case LevelImportance::Delete:   { return NameLevels::DELETE;  }
+        case LevelImportance::Low:      { return NameLevels::LOW;     }
+        case LevelImportance::Medium:   { return NameLevels::MEDIUM;  }
+        case LevelImportance::High:     { return NameLevels::HIGH;    }
+        default:                        { return NameLevels::UNKNOWN; }
     }
 }
 
@@ -63,8 +72,8 @@ inline std::optional<LevelImportance> VirtualLogger::str2lvl(std::string level) 
         return std::toupper(c);
     });
 
-    if (level == "LOW")         { return LevelImportance::Low;    }
-    else if (level == "MEDIUM") { return LevelImportance::Medium; }
-    else if (level == "HIGH")   { return LevelImportance::High;   }
-    else                        { return std::nullopt;            }
+    if (level == NameLevels::LOW)         { return LevelImportance::Low;    }
+    else if (level == NameLevels::MEDIUM) { return LevelImportance::Medium; }
+    else if (level == NameLevels::HIGH)   { return LevelImportance::High;   }
+    else                                  { return std::nullopt;            }
 }

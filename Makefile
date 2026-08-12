@@ -3,6 +3,7 @@ SRC_DIR = src
 TEST_DIR = test
 BUILD_DIR = build
 BIN_DIR = bin
+FILES_TEST_DIR = $(BUILD_DIR)/test
 
 # имена итоговых файлов
 LOGGER_LIB = $(BIN_DIR)/libLogger.so
@@ -10,8 +11,14 @@ MANAGER_LIB = $(BIN_DIR)/libManager.so
 APP_NAME = $(BIN_DIR)/journal_app
 TEST_BIN = $(BIN_DIR)/test_app
 
+# пути файлов для [данных/ошибок] тестов
+TEMP_FILE_PATH = $(FILES_TEST_DIR)/temp_file_tests.txt
+ERROR_FILE_PATH = $(FILES_TEST_DIR)/test_errors.txt
+
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -I$(SRC_DIR)/headers -fPIC
+CXXFLAGS = -Wall -Wextra -std=c++17 -I$(SRC_DIR)/headers -fPIC 	\
+		   -DTEMP_FILE_PATH=\"$(TEMP_FILE_PATH)\" 				\
+           -DERROR_FILE_PATH=\"$(ERROR_FILE_PATH)\"
 
 # флаги линковки
 LIB_LDFLAGS = -shared
@@ -34,7 +41,6 @@ TEST_OBJS = $(patsubst $(TEST_DIR)/%.cpp, $(BUILD_DIR)/test_%.o, $(TEST_SRCS))
 
 all: logger_lib manager_lib app
 
-
 # сборка библиотеки логгера
 logger_lib: $(LOGGER_LIB)
 
@@ -46,7 +52,7 @@ $(LOGGER_LIB): $(LOGGER_OBJS)
 # сборка библиотеки менеджера
 manager_lib: $(MANAGER_LIB)
 
-# Линкуем менеджер с логгером, так как менеджеру нужны его символы, и добавляем rpath
+# линкуем менеджер с логгером
 $(MANAGER_LIB): $(MANAGER_OBJS) $(LOGGER_LIB)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(LIB_LDFLAGS) -o $@ $(MANAGER_OBJS) -L$(BIN_DIR) -lLogger $(RPATH_FLAGS)
@@ -62,12 +68,13 @@ $(APP_NAME): $(APP_OBJS) $(LOGGER_LIB) $(MANAGER_LIB)
 
 # сборка и запуск тестов
 test: $(TEST_BIN) logger_lib manager_lib
+	@mkdir -p $(FILES_TEST_DIR)
 	./$(TEST_BIN)
 
 # линкуем тесты со всеми нужными объектами и библиотеками
-$(TEST_BIN): $(APP_OBJS) $(TEST_OBJS)
+$(TEST_BIN): $(BUILD_DIR)/application.o $(TEST_OBJS) logger_lib manager_lib
 	@mkdir -p $(BIN_DIR)
-	$(CXX) -o $@ $^ -L$(BIN_DIR) -lManager -lLogger $(RPATH_FLAGS) -pthread
+	$(CXX) -o $@ $(BUILD_DIR)/application.o $(TEST_OBJS) -L$(BIN_DIR) -lManager -lLogger $(RPATH_FLAGS) -pthread
 
 
 # компиляция объектных файлов
@@ -78,6 +85,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 $(BUILD_DIR)/test_%.o: $(TEST_DIR)/%.cpp
 	@mkdir -p $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
 
 # очистка
 clean:

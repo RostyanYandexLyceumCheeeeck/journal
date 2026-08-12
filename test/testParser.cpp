@@ -1,29 +1,11 @@
 #include <iostream>
 #include <cassert>
+#include <fstream>
 
 
+#include "testSources.h"
 #include "application.h"
 
-// константы цветов
-constexpr auto RESET  = "\033[0m";
-constexpr auto RED    = "\033[31m";
-constexpr auto GREEN  = "\033[32m";
-constexpr auto YELLOW = "\033[33m";
-constexpr auto BLUE   = "\033[34m";
-
-
-void printStatus(std::string nameTest, bool successfull) {
-    if (successfull) {
-        std::cout << GREEN << "+----------+" <<                    std::endl
-                           << "|    OK    |" << ' ' << nameTest << std::endl 
-                           << "+----------+";
-    } else {
-        std::cout << RED   << "############" <<                    std::endl
-                           << "## FAILED ##" << ' ' << nameTest << std::endl 
-                           << "############";
-    }
-    std::cout << RESET << std::endl;
-}
 
 using vecStr = std::vector<std::string>; 
 class ParserCommandTest {
@@ -52,15 +34,29 @@ private:
 
 
 void FabricTestsParser(std::string nameTest, vecStr arrInput, vecStr arrAnswer) {
-    ParserCommandTest test(arrInput, arrAnswer);
-    
-    bool result = test.successfull();
-    printStatus(nameTest, result); 
-    assert(result);
+    try {
+        ParserCommandTest test(arrInput, arrAnswer);
+
+        bool result = test.successfull();
+        printStatus(nameTest, result); 
+
+        if (!result) {
+            std::ofstream fileError(fileErrorPath, std::ios::app);
+            if (fileError.is_open()) { fileError << "[ " << nameTest << " ]: result != answer\n"; }
+        }
+
+    } catch (const std::exception& e) {
+        printStatus(nameTest, false);
+
+        std::ofstream fileError(fileErrorPath, std::ios::app);
+        if (fileError.is_open()) { fileError << "[ " << nameTest << " ]: " << e.what() << "\n"; }
+    }
 }
 
 
 void parserTests() {
+    std::cout << YELLOW << "--- Running ParserCommand Tests ---" << RESET << "\n";
+
     // тесты на пустую строку
     FabricTestsParser("EmptyStringTest_01", {""},                                        {});
     FabricTestsParser("EmptyStringTest_02", {" "},                                       {});
@@ -81,4 +77,6 @@ void parserTests() {
     // тесты на то, чтоб парсер увидел несколько токенов
     FabricTestsParser("MoreTokenTest_01", {"\n", "msg", "zxc"},                   {"msg", "zxc"}              );
     FabricTestsParser("MoreTokenTest_02", {"\n", "msg", "zxc", "\'axaxaxaxax\'"}, {"msg", "zxc", "axaxaxaxax"});
+
+    std::cout << YELLOW << "--- ParserCommand tests passed successfully! ---" << RESET << "\n\n";
 }

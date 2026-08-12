@@ -7,7 +7,7 @@ std::vector<std::string> parseCommand(const std::string& input);
 
 class Application {
     VirtualLogManager* manager_;
-    LevelImportance defaultLevel_; // Уровень важности, назначаемый по умолчанию
+    LevelImportance defaultLevel_; // уровень важности, назначаемый по умолчанию
 
 public:
     Application(std::filesystem::path path, LevelImportance minLevel);

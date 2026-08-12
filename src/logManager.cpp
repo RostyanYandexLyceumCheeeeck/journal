@@ -132,12 +132,14 @@ void LogManager::deleteLog(std::size_t index) {
     std::streampos targetOffset = it->self;
     
     // изменяем уровень на delete 
-    logger_->writeBytesOffset("DELETE ", LogFormat::LEVEL_LEN, 
-                                targetOffset + std::streampos(LogFormat::LEVEL_OFFSET));
+    logger_->writeBytesOffset(LogFormat::formatLevel(LevelImportance::Delete).c_str(), 
+                              LogFormat::LEVEL_LEN, 
+                              targetOffset + std::streampos(LogFormat::LEVEL_OFFSET));
     
     // меняем before адресом корзины
-    logger_->writeBytesOffset(LogFormat::formatPos(map_.basket).c_str(), LogFormat::NUM_LEN, 
-                                targetOffset + std::streampos(LogFormat::BEFORE_OFFSET));
+    logger_->writeBytesOffset(LogFormat::formatPos(map_.basket).c_str(), 
+                              LogFormat::NUM_LEN, 
+                              targetOffset + std::streampos(LogFormat::BEFORE_OFFSET));
     map_.basket = targetOffset;
 
     relinkNeighbors(it->before, it->after);
@@ -152,11 +154,13 @@ void LogManager::destroyLog(std::size_t index) {
     auto it = std::next(cache_.begin(), currLogEntry_ + index);
     std::streampos targetOffset = it->self;
     
-    logger_->writeBytesOffset("DESTROY", LogFormat::LEVEL_LEN, 
-                                targetOffset + std::streampos(LogFormat::LEVEL_OFFSET));
+    logger_->writeBytesOffset(LogFormat::formatLevel(LevelImportance::Destroy).c_str(), 
+                              LogFormat::LEVEL_LEN, 
+                              targetOffset + std::streampos(LogFormat::LEVEL_OFFSET));
     
-    logger_->writeBytesOffset(LogFormat::formatPos(map_.free).c_str(), LogFormat::NUM_LEN, 
-                                targetOffset + std::streampos(LogFormat::BEFORE_OFFSET));
+    logger_->writeBytesOffset(LogFormat::formatPos(map_.free).c_str(), 
+                              LogFormat::NUM_LEN, 
+                              targetOffset + std::streampos(LogFormat::BEFORE_OFFSET));
     
     map_.free = targetOffset;
     relinkNeighbors(it->before, it->after);
@@ -322,30 +326,36 @@ std::optional<logEntry> LogManager::parseEntry(std::streampos offset) {
                                                static_cast<std::streamoff>(LogFormat::HEADER_LEN), entry.size);
 
     entry.before = static_cast<std::streampos>(std::stoull(header.substr(LogFormat::BEFORE_OFFSET, 
-                                                                        LogFormat::NUM_LEN)));
+                                                                         LogFormat::NUM_LEN)));
     entry.after  = static_cast<std::streampos>(std::stoull(header.substr(LogFormat::AFTER_OFFSET, 
-                                                                        LogFormat::NUM_LEN)));
+                                                                         LogFormat::NUM_LEN)));
     
     return entry;
 } 
 
 void LogManager::relinkNeighbors(std::streampos before, std::streampos after) {
     if (before != NPOS) {
-        logger_->writeBytesOffset(LogFormat::formatPos(after).c_str(), LogFormat::NUM_LEN, 
-                                    before + std::streampos(LogFormat::AFTER_OFFSET));
+        logger_->writeBytesOffset(LogFormat::formatPos(after).c_str(), 
+                                  LogFormat::NUM_LEN, 
+                                  before + std::streampos(LogFormat::AFTER_OFFSET));
     } else {
         map_.first = after;
     }
 
     if (after != NPOS) {
-        logger_->writeBytesOffset(LogFormat::formatPos(before).c_str(), LogFormat::NUM_LEN, 
-                                    after + std::streampos(LogFormat::BEFORE_OFFSET));
+        logger_->writeBytesOffset(LogFormat::formatPos(before).c_str(), 
+                                  LogFormat::NUM_LEN, 
+                                  after + std::streampos(LogFormat::BEFORE_OFFSET));
     } else {
         map_.last = before;
     }
 }
 
-LOG_API CreateLogManager_t createLogManager = [](const std::filesystem::path& logPath, LevelImportance minLevel, size_t sizeWindow) -> VirtualLogManager* {
+// для динамической библиотеки
+LOG_API CreateLogManager_t createLogManager = [](const std::filesystem::path& logPath, 
+                                                 LevelImportance minLevel, 
+                                                 size_t sizeWindow) -> VirtualLogManager* {
+    
     return new LogManager(logPath, minLevel, sizeWindow);
 };
 
