@@ -1,11 +1,11 @@
 #include <iostream>
-#include <dlfcn.h>
 
 #include "headers/application.h"
 
-#ifndef LIBRARY_PATH
-#define LIBRARY_PATH "./bin/libLogger.so"
-#endif
+
+extern CreateLogManager_t createLogManager;
+extern DestroyLogManager_t destroyLogManager;
+
 
 std::vector<std::string> parseCommand(const std::string& input) {
     std::string token;
@@ -48,100 +48,45 @@ std::vector<std::string> parseCommand(const std::string& input) {
     return result;
 }
 
-Application::Application(std::filesystem::path path, LevelImportance minLevel) {
-    path_ = std::move(path);
 
-    libHandle_ = dlopen(LIBRARY_PATH, RTLD_LAZY);
-    if (!libHandle_) {
-        throw std::runtime_error(dlerror());
-    }
-
-    // ищем функции создания/удаления
-    auto createFunc = reinterpret_cast<CreateLogger_t>(dlsym(libHandle_, "createLogger"));
-    auto destroyFunc = reinterpret_cast<DestroyLogger_t>(dlsym(libHandle_, "destroyLogger"));
-
-    if (!createFunc || !destroyFunc) {
-        dlclose(libHandle_);
-        throw std::runtime_error(dlerror());
-    }
-
-    threadLogger_ = std::thread(&Application::logWorker, this);
-    instanceLogger_ = std::unique_ptr<VirtualLogger, DestroyLogger_t>(createFunc(path_, minLevel), destroyFunc);
+Application::Application(std::filesystem::path path, LevelImportance minLevel): defaultLevel_(minLevel) {
+    manager_ = createLogManager(path, minLevel, 5);
 }
 
 Application::~Application() {
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        stopWorker_ = true;
-    }
-    
-    cv_.notify_one();
-    if (threadLogger_.joinable()) { threadLogger_.join(); }
-
-    instanceLogger_.reset();
-    if (libHandle_) { dlclose(libHandle_); }
-}
-
-void Application::logWorker() {
-    while (true) {
-        std::pair<std::string, LevelImportance> task;
-        {
-            std::unique_lock<std::mutex> lock(queueMutex_);
-            cv_.wait(lock, [this]() { 
-                return !queue_.empty() || stopWorker_; 
-            });
-
-            if (queue_.empty() && stopWorker_) {
-                break;
-            }
-
-            task = std::move(queue_.front());
-            queue_.pop();
-        }
-
-        instanceLogger_->log(task.first, task.second);
-    }
-}
-
-void Application::pushLog(std::string message, LevelImportance level) {
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        queue_.emplace(std::move(message), level);
-    }
-    cv_.notify_one(); 
-}
-
-void Application::pushLog(std::string message) {
-    pushLog(message, instanceLogger_->getMinLevel());
+    if (manager_) { destroyLogManager(manager_); }
 }
 
 
 void Application::printHelp() {
     std::cout << "Available commands:\n"
-                << "  help                - Show this message.\n"
-                << "  exit                - Exit the program.\n"
-                << "  log                 - Show all messages.\n"
-                << "  jnl -gl             - Show the current default importance level.\n"
-                << "  jnl -sl <level>     - Change the default importance level to <level>.\n"
-                << "  msg [level] <text>  - Saves <text> to journal, specifying the importance level. If the [level] is not specified, it is recorded by default\n"
-                << "  <text>              - If the first word of the <text> is not a command(or only the word \"msg\" was entered), " 
-                <<                          "it will be treated as <text> with no importance level. "
-                <<                          "In other words, it is not possible to write an empty string to the journal.\n";
+              << "  help                - Show this message.\n"
+              << "  exit                - Exit the program.\n"
+              << "  log                 - Show visible window of messages.\n"
+              << "  stp <count>         - Move window forward (>0) or backward (<0).\n"
+              << "  del <index>         - Mark message as deleted (by index in window 0..size-1).\n"
+              << "  dst <index>         - Destroy message and free space (by index in window 0..size-1).\n"
+              << "  jnl -gl             - Show the current default importance level.\n"
+              << "  jnl -sl <level>     - Change the default importance level to <level>.\n"
+              << "  msg [level] <text>  - Saves <text> to journal, specifying the importance level.\n"
+              << "                           If the [level] is not specified, it is recorded by default\n"
+              << "  <text>              - If the first word of the <text> is not a command(or only the word \"msg\" was entered),\n" 
+              << "                           it will be treated as <text> with no importance level.\n"
+              << "                           In other words, it is not possible to write an empty string to the journal.\n";
 }
 
 void Application::printLog() {
-    std::ifstream file(path_);
+    auto logs = manager_->getWindowLogs(); 
     
-    if (!file.is_open()) {
-        std::cout << "Не удалось открыть файл\n";
+    if (logs.empty()) {
+        std::cout << "Log window is empty.\n";
         return;
     }
 
-    if (file.peek() == std::ifstream::traits_type::eof()) return;
-
-    std::lock_guard<std::mutex> lock(queueMutex_);
-    std::cout << file.rdbuf();
-    file.close();
+    for (size_t i = 0; i < logs.size(); ++i) {
+        std::cout << "=== [ " << i << " ] ===\n";
+        std::cout << manager_->showEntry(logs[i]);
+    }
 }
 
 void Application::run() {
@@ -164,8 +109,9 @@ void Application::run() {
         if (tokens.empty()) continue;
 
         const std::string& command = tokens[0];
+        
         if (command == "exit") {
-            std::cout << "Exit from journal!\n";
+            std::cout << "\nExit from journal!\n";
             break;
         }
 
@@ -179,44 +125,65 @@ void Application::run() {
             continue;
         }
 
+        if (command == "stp" && tokens.size() > 1) {
+            int count = std::stoi(tokens[1]);
+            manager_->stepWindow(count);
+            printLog();
+            continue;
+        }
+
+        if (command == "del" && tokens.size() > 1) {
+            std::size_t idx = std::stoull(tokens[1]);
+            manager_->deleteLog(idx);
+            printLog();
+            continue;
+        }
+
+        if (command == "dst" && tokens.size() > 1) {
+            std::size_t idx = std::stoull(tokens[1]);
+            manager_->destroyLog(idx);
+            printLog();
+            continue;
+        }
+
         if (command == "jnl" && tokens.size() > 1) {
             if (tokens[1] == "-gl") { 
-                std::cout << " level instance to default:  " 
-                          << instanceLogger_->lvl2str(instanceLogger_->getMinLevel()) 
+                std::cout << "level instance to default:  " 
+                          << VirtualLogger::lvl2str(defaultLevel_) 
                           << std::endl;
             
             } else if (tokens[1] == "-sl" && tokens.size() > 2) {
-                    auto optLevel = instanceLogger_->str2lvl(tokens[2]);
-    
-                    if (!optLevel) {
-                        std::cout << "level " << tokens[2] << " not found!\n";
-                        continue;;
-                    }
-                    instanceLogger_->setMinLevel(optLevel.value());
-            
+                auto optLevel = VirtualLogger::str2lvl(tokens[2]);
+
+                if (!optLevel) {
+                    std::cout << "level " << tokens[2] << " not found!\n";
+                    continue;
+                }
+                defaultLevel_ = optLevel.value();
             } 
             continue;
         }
 
         if (command == "msg" && tokens.size() > 1) {
-            std::size_t offset = command.size() + 1;
+            std::size_t offset = input.find(tokens[1]);
 
             if (tokens.size() > 2) {
-                auto optLevel = instanceLogger_->str2lvl(tokens[1]);
-                
+                auto optLevel = VirtualLogger::str2lvl(tokens[1]);
+
                 // если передали уровень важности
                 if (optLevel) {
-                    offset += tokens[1].size() + 1;
-                    pushLog(input.substr(offset), optLevel.value());
+                    offset = input.find(tokens[2], offset + tokens[1].size());
+                    manager_->pushLog(input.substr(offset), optLevel.value());
                     continue;
                 }
             }
 
-            pushLog(input.substr(offset));
+            manager_->pushLog(input.substr(offset), defaultLevel_);
             continue;
         }
+        
         // если команда не опознана(или было введено только слово «msg»), 
         // то воспринимается как текст с важностью по умолчанию
-        pushLog(input);
+        manager_->pushLog(input, defaultLevel_);
     }
 }

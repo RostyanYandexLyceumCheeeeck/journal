@@ -10,15 +10,11 @@
 
 
 enum class LOG_API LevelImportance {
+    Destroy = -2,
+    Delete = -1,
     Low = 0,
     Medium,
     High
-};
-
-struct LOG_API Message {
-    LevelImportance level;
-    std::chrono::system_clock::time_point timestamp;
-    std::string message;
 };
 
 
@@ -33,17 +29,17 @@ public:
     virtual void setMinLevel(LevelImportance level) noexcept = 0;
     virtual LevelImportance getMinLevel() const noexcept = 0;
 
-    // запись сообщения [с указанием важности]/[по умолчанию]
-    virtual bool log(const std::string& message, LevelImportance level) = 0;
-    virtual bool log(const std::string& message) = 0;
+    // операции чтения
+    virtual std::string readOffset(std::streampos offset, uint64_t size) = 0;
+    virtual std::streampos getEndFile() = 0;
+
+    // операции записи
+    virtual void writeToEnd(const std::string& data) = 0;
+    virtual void writeBytesOffset(const char* data, std::size_t size, std::streampos offset) = 0;
 
     // convert [LevelImportance to std::string] and back
     static std::string lvl2str(LevelImportance level) noexcept;
     static std::optional<LevelImportance> str2lvl(std::string level) noexcept;
-    
-protected:
-    virtual void writeToFile(const Message& entry) = 0;
-    virtual std::string formatTime(const std::chrono::system_clock::time_point& tp) = 0;
 };
 
 // типы указателей на функции фабрики
@@ -53,10 +49,12 @@ using DestroyLogger_t = void (*)(VirtualLogger*);
 
 inline std::string VirtualLogger::lvl2str(LevelImportance level) noexcept {
     switch (level) {
-        case LevelImportance::Low:    { return "LOW";     }
-        case LevelImportance::Medium: { return "MEDIUM";  }
-        case LevelImportance::High:   { return "HIGH";    }
-        default:                      { return "UNKNOWN"; }
+        case LevelImportance::Destroy:  { return "DESTROY"; }
+        case LevelImportance::Delete:   { return "DELETE";  }
+        case LevelImportance::Low:      { return "LOW";     }
+        case LevelImportance::Medium:   { return "MEDIUM";  }
+        case LevelImportance::High:     { return "HIGH";    }
+        default:                        { return "UNKNOWN"; }
     }
 }
 

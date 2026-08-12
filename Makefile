@@ -5,55 +5,70 @@ BUILD_DIR = build
 BIN_DIR = bin
 
 # имена итоговых файлов
-LIB_NAME = $(BIN_DIR)/libLogger.so
+LOGGER_LIB = $(BIN_DIR)/libLogger.so
+MANAGER_LIB = $(BIN_DIR)/libManager.so
 APP_NAME = $(BIN_DIR)/journal_app
 TEST_BIN = $(BIN_DIR)/test_app
 
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -Isrc/headers -fPIC -DLIBRARY_PATH='"$(LIB_NAME)"'
-LDFLAGS = -shared
+CXXFLAGS = -Wall -Wextra -std=c++17 -I$(SRC_DIR)/headers -fPIC
 
-# файлы библиотеки
-LIB_SRCS = $(SRC_DIR)/logger.cpp
-LIB_OBJS = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(LIB_SRCS))
+# флаги линковки
+LIB_LDFLAGS = -shared
+RPATH_FLAGS = -Wl,-rpath=./$(BIN_DIR)
 
-# файлы приложения
-APP_SRCS = $(SRC_DIR)/application.cpp #$(SRC_DIR)/parser.cpp
-APP_OBJS = $(patsubst $(SRC_DIR)/%.cpp, $(BUILD_DIR)/%.o, $(APP_SRCS))
+# файлы исходников
+LOGGER_SRCS = $(SRC_DIR)/asyncLogger.cpp 
+MANAGER_SRCS = $(SRC_DIR)/logManager.cpp
+APP_SRCS = $(SRC_DIR)/application.cpp $(SRC_DIR)/main.cpp
 
-# файл точки входа приложения
-MAIN_OBJ = $(BUILD_DIR)/main.o
+# объектные файлы
+LOGGER_OBJS = $(LOGGER_SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+MANAGER_OBJS = $(MANAGER_SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
+APP_OBJS = $(APP_SRCS:$(SRC_DIR)/%.cpp=$(BUILD_DIR)/%.o)
 
-# тестовые файлы
 TEST_SRCS = $(wildcard $(TEST_DIR)/*.cpp)
 TEST_OBJS = $(patsubst $(TEST_DIR)/%.cpp, $(BUILD_DIR)/test_%.o, $(TEST_SRCS))
 
-.PHONY: all library app test clean
+.PHONY: all logger_lib manager_lib app test clean
 
-all: library app
+all: logger_lib manager_lib app
 
-# сборка библиотеки
-library: $(LIB_NAME)
 
-$(LIB_NAME): $(LIB_OBJS)
+# сборка библиотеки логгера
+logger_lib: $(LOGGER_LIB)
+
+$(LOGGER_LIB): $(LOGGER_OBJS)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) $(LDFLAGS) -o $@ $^
+	$(CXX) $(LIB_LDFLAGS) -o $@ $^
+
+
+# сборка библиотеки менеджера
+manager_lib: $(MANAGER_LIB)
+
+# Линкуем менеджер с логгером, так как менеджеру нужны его символы, и добавляем rpath
+$(MANAGER_LIB): $(MANAGER_OBJS) $(LOGGER_LIB)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(LIB_LDFLAGS) -o $@ $(MANAGER_OBJS) -L$(BIN_DIR) -lLogger $(RPATH_FLAGS)
+
 
 # сборка основного приложения
 app: $(APP_NAME)
 
-$(APP_NAME): $(APP_OBJS) $(MAIN_OBJ) library
+$(APP_NAME): $(APP_OBJS) $(LOGGER_LIB) $(MANAGER_LIB)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) -o $@ $(APP_OBJS) $(MAIN_OBJ) -ldl -pthread
+	$(CXX) $(APP_OBJS) -o $@ -L$(BIN_DIR) -lManager -lLogger $(RPATH_FLAGS)
+
 
 # сборка и запуск тестов
-test: $(TEST_BIN) library
+test: $(TEST_BIN) logger_lib manager_lib
 	./$(TEST_BIN)
 
-# линкуем тесты с объектами приложения
+# линкуем тесты со всеми нужными объектами и библиотеками
 $(TEST_BIN): $(APP_OBJS) $(TEST_OBJS)
 	@mkdir -p $(BIN_DIR)
-	$(CXX) -o $@ $^ -ldl -pthread
+	$(CXX) -o $@ $^ -L$(BIN_DIR) -lManager -lLogger $(RPATH_FLAGS) -pthread
+
 
 # компиляция объектных файлов
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
@@ -62,7 +77,7 @@ $(BUILD_DIR)/%.o: $(SRC_DIR)/%.cpp
 
 $(BUILD_DIR)/test_%.o: $(TEST_DIR)/%.cpp
 	@mkdir -p $(BUILD_DIR)
-	$(CXX) -std=c++17 -Isrc/headers -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # очистка
 clean:

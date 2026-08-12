@@ -26,6 +26,7 @@ int main(int argc, char* argv[]) {
 
     Application app(path, optLevel.value());
     app.run();
+
     return 0;
 }
 
